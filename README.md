@@ -50,4 +50,8 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 This project is licensed under the [MIT License](https://choosealicense.com/licenses/mit/).
 
-## Autor
+### 🖊️ Author 
+
+**Ali Arhan İla**  
+[GitHub Profile](https://github.com/aliarhanila)  
+[LinkedIn Profile](https://www.linkedin.com/in/ali-arhan-ila-693a2830b/)
