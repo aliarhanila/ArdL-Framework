@@ -30,7 +30,7 @@ No external dependencies are required. The engine relies purely on the standard 
 **Compile the Engine (Example with XOR Training):**  
 
 
-```gcc train.c nn_layers.c -o ardl_engine -lm -O3```
+```gcc train_nn.c nn_layers.c -o ardl_engine -lm -O3```
 
 
 ## 🗺️ Roadmap
