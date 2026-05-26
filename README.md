@@ -41,8 +41,6 @@ The core engine is complete, but ARdL is an evolving project. Future milestones 
 - [x] Cache-Optimized Matrix Operations
 - [ ] Save / Load Model Weights Functionality
 - [ ] Convolutional Neural Networks (CNN) Integration
-- [ ] MPU6050 IMU Data Processing Pipeline
-- [ ] Direct Deployment to ESP32-S3 (Targeting edge-inference for wearable sensors and kinematic analysis)
 
 ## 🤝 Contributing
 
@@ -51,3 +49,5 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 ## 📝 License
 
 This project is licensed under the [MIT License](https://choosealicense.com/licenses/mit/).
+
+## Autor
