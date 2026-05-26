@@ -1,4 +1,4 @@
-# ARdL C-Engine 🧠⚡
+# ARdL C-Engine 🧠
 
 A High-Performance, Bare-Metal Neural Network Engine written in Pure C from scratch.
 
