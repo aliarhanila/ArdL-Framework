@@ -28,5 +28,26 @@ The engine computes gradients and distributes the categorical cross-entropy loss
 No external dependencies are required. The engine relies purely on the standard C library (`<stdlib.h>`, `<math.h>`).
 
 **Compile the Engine (Example with XOR Training):**
-```bash
-gcc train.c nn_layers.c -o ardl_engine -lm -O3
+```bash```
+```gcc train.c nn_layers.c -o ardl_engine -lm -O3```
+
+
+## 🗺️ Roadmap
+
+The core engine is complete, but ARdL is an evolving project. Future milestones include:
+
+- [x] Dense (Fully Connected) Layers
+- [x] Forward & Backward Propagation
+- [x] Cache-Optimized Matrix Operations
+- [ ] Save / Load Model Weights Functionality
+- [ ] Convolutional Neural Networks (CNN) Integration
+- [ ] MPU6050 IMU Data Processing Pipeline
+- [ ] Direct Deployment to ESP32-S3 (Targeting edge-inference for wearable sensors and kinematic analysis)
+
+## 🤝 Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change or optimize further. 
+
+## 📝 License
+
+This project is licensed under the [MIT License](https://choosealicense.com/licenses/mit/).
