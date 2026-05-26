@@ -31,6 +31,11 @@ No external dependencies are required. The engine relies purely on the standard 
 
 
 ```gcc train_nn.c nn_layers.c -o ardl_engine -lm -O3```
+**Run the Engine:**  
+
+```./ardl_engine```
+
+
 
 
 ## 🗺️ Roadmap
