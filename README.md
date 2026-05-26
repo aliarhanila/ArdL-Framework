@@ -27,8 +27,9 @@ The engine computes gradients and distributes the categorical cross-entropy loss
 
 No external dependencies are required. The engine relies purely on the standard C library (`<stdlib.h>`, `<math.h>`).
 
-**Compile the Engine (Example with XOR Training):**
-```bash```
+**Compile the Engine (Example with XOR Training):**  
+
+
 ```gcc train.c nn_layers.c -o ardl_engine -lm -O3```
 
 
