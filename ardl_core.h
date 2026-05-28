@@ -1,5 +1,5 @@
-#ifndef NN_LAYERS_H
-#define NN_LAYERS_H
+#ifndef ARDL_CORE_H
+#define ARDL_CORE_H
 
 
 // --- Memory Structures ---
