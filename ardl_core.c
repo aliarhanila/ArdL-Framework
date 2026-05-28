@@ -1,4 +1,4 @@
-//nn_layers.c
+//ardl_core.c
 //Final , Cache-Optimized Forward Pass Engine
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,7 +109,7 @@ float random_randn() {
     //(epsilon)
     if (u1 <= 1e-7f) u1 = 1e-7f; 
     
-    // Box-Muller dönüşümü
+    // Box-Muller Transformation
     return sqrtf(-2.0f * logf(u1)) * cosf(2.0f * 3.1415926535f * u2);
 }
 
@@ -120,7 +120,6 @@ float random_randn() {
 */
 void randomize_matrix(Matrix *mat) {
     for (int i = 0; i < mat->rows * mat->cols; i++) {
-        // Ağırlıkları 0.1 ile çarparak küçük başlatıyoruz (NumPy kodundaki * 0.1 kısmı)
         mat->data[i] = random_randn() * 0.1f; 
     }
 }
@@ -211,7 +210,6 @@ void matrix_dot_optimized(const Matrix *A, const Matrix *B_T, Matrix *C) {
             for(int k = 0; k < A->cols; k++) {
                 
                 float a_val = A->data[i * A->cols + k];
-                // MUAZZAM KISIM BURASI: Her iki okuma da '+ k' ile bitiyor (Yan yana okuma)
                 float b_val = B_T->data[j * B_T->cols + k]; 
 
                 sum += a_val * b_val;
