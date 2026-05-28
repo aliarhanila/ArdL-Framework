@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stddef.h>
-#include "nn_layers.h"
+#include "ardl_core.h"
 
 /*
 #----------------------------
