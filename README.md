@@ -93,15 +93,8 @@ gcc train.c nn_layers.c -o ardl -lm -O3 -march=native -ffast-math
 ---
 
 ## 📊 Example Output
+![Terminal Output](terminal_output.png)  
 
-```
-Epoch 0    | Loss: 0.250192 | Arena: 896 bytes
-Epoch 200  | Loss: 0.077776 | Arena: 896 bytes
-...
-Epoch 2000 | Loss: 0.000007 | Arena: 896 bytes
-
-[OK] No memory leak detected
-```
 
 ---
 
