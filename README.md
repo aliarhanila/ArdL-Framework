@@ -192,7 +192,7 @@ For major changes, please open an issue first to discuss design decisions and ar
 
 ## 📜 License
 
-MIT License
+GNU General Public License v3.0 License
 
 ---
 
