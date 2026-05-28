@@ -151,4 +151,6 @@ MIT License
 
 ## 🖊️ Author
 
-**Ali Arhan İla**
+**Ali Arhan İla**  
+[LinkedIn](https://www.linkedin.com/in/ali-arhan-ila-693a2830b/)
+[GitHub](https://github.com/aliarhanila)
