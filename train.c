@@ -12,7 +12,7 @@ int main() {
     // ==========================================
     // 1. ARENA INIT
     // ==========================================
-    size_t arena_size = 1024 * 1024; // 1 MB (test için)
+    size_t arena_size = 1024 * 1024; // 1 MB (for test)
     MemoryArena *arena = arena_create(arena_size);
 
     printf("[INFO] Arena created: %zu bytes\n", arena->size);
