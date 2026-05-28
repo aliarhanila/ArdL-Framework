@@ -106,7 +106,7 @@ This reduces both:
 ### Compile
 
 ```bash
-gcc train.c nn_layers.c -o ardl -lm -O3 -march=native -ffast-math
+gcc train.c ardl_core.c -o ardl -lm -O3 -march=native -ffast-math
 ```
 
 ### Run
