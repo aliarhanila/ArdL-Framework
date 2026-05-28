@@ -333,13 +333,17 @@ void compute_gradients(DenseLayer *layer , Matrix *input_a){
 
     //Biases Gradient
     for(int j = 0 ; j < layer->db->cols ; j++){
-        float sum = 0.0f;
-        for(int i = 0 ; i < layer->delta->rows ; i++){//batch size
-            sum += layer->delta->data[i * layer->delta->cols +j];
-        }
-        layer->db->data[j] = sum;
+         layer->db->data[j] = 0.0f;
     }
-
+    for(int i = 0 ; i < layer->delta->rows ; i++){//batch size
+        for(int j = 0 ; j < layer->db->cols ; j++){
+            //row major optimized "db" 
+            layer->db->data[j] += layer->delta->data[i * layer->delta->cols +j];
+        }
+        
+    }
+        
+    
     //Weights Gradient
     // We do a live transpose read to avoid allocating memory for input_a^T
     for(int i = 0 ; i < input_a->cols ; i++){
