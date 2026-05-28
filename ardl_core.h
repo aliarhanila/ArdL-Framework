@@ -1,7 +1,6 @@
 #ifndef NN_LAYERS_H
 #define NN_LAYERS_H
 
-#include <stddef.h>
 
 // --- Memory Structures ---
 typedef struct {
