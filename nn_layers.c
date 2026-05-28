@@ -3,7 +3,51 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <stddef.h>
 #include "nn_layers.h"
+
+/*
+#----------------------------
+# Memory Area Function
+#---------------------------
+*/
+
+//Arena İnit
+MemoryArena* arena_create(size_t size){
+    MemoryArena *arena = malloc(sizeof(MemoryArena));
+    arena->buffer = malloc(size);
+    arena->size = size;
+    arena->offset = 0;
+    return arena;
+}
+
+//Arena Alloc Function
+void* arena_alloc(MemoryArena *arena,size_t size){
+    //alignment 
+    size = (size + 7) & ~7; // 8 byte alignment(for embedded systems)
+
+    if(arena->offset + size > arena->size){
+        printf("Error (Memory): Arena out of memory!\n");
+        return NULL;
+    }
+
+    void *ptr = (void*)(arena->buffer + arena->offset);
+
+    arena->offset +=size;
+
+    return ptr;
+}
+
+//arena offset reset function
+void arena_reset(MemoryArena *arena){
+    arena->offset = 0;
+}
+
+//Erase Arena function
+void arena_free(MemoryArena *arena){
+    free(arena->buffer);
+    free(arena);
+}
 
 
 /*
@@ -32,22 +76,26 @@ float sigmoid_grad(float x){
 # Matrix Creations and release
 #----------------------------------
 */
-Matrix* create_matrix(int rows, int cols){
-    Matrix *mat = (Matrix*)malloc(sizeof(Matrix));
+Matrix* create_matrix_area(MemoryArena *arena,int rows, int cols){
+    Matrix *mat = (Matrix*)arena_alloc(arena ,sizeof(Matrix));
+    if(!mat){
+        return NULL;
+    } 
+
     mat->rows = rows;
     mat->cols = cols;
-    mat->data = (float*)calloc(rows * cols,sizeof(float));
+    
+    mat->data = (float*)arena_alloc(arena , rows * cols * sizeof(float));
+    
+    // if memory data is not allocated
+    if(!mat->data){
+        return NULL;
+    }
+    
+
     return mat;
 }
 
-void free_matrix(Matrix *mat){
-    if(mat != NULL){
-        if(mat->data != NULL){
-            free(mat->data);
-        }
-        free(mat);
-    }
-}
 
 /*
 #----------------------------
@@ -85,7 +133,7 @@ void randomize_matrix(Matrix *mat) {
 */
 
 // Transpose matrix for cache optimization (Row-Major to Column-Major mapping)
-void transpose_matrix(Matrix *src, Matrix *dst) {
+void transpose_matrix(const Matrix *src, Matrix *dst) {
     
     // 1. Safety Check: Destination matrix dimensions must be the inverse of the source.
     if (src->rows != dst->cols || src->cols != dst->rows) {
@@ -109,7 +157,7 @@ void transpose_matrix(Matrix *src, Matrix *dst) {
 }
 
 // General Matrix Multiplication (Dot Product)
-void matrix_dot(Matrix *A, Matrix *B, Matrix *C) {
+void matrix_dot(const Matrix *A, const Matrix *B, Matrix *C) {
     
     // Matrix dimensions check
     if(A->cols != B->rows) {
@@ -144,7 +192,7 @@ void matrix_dot(Matrix *A, Matrix *B, Matrix *C) {
 
 
 // Optimized GEMM (Uses Transposed B to prevent Cache Misses)
-void matrix_dot_optimized(Matrix *A, Matrix *B_T, Matrix *C) {
+void matrix_dot_optimized(const Matrix *A, const Matrix *B_T, Matrix *C) {
     
     // Check (B_T->cols is actually original B's rows)
     if(A->cols != B_T->cols) {
@@ -182,27 +230,31 @@ void matrix_dot_optimized(Matrix *A, Matrix *B_T, Matrix *C) {
 
 //Allocates memory for a complate dense layer and initializes weights/biases
 
-DenseLayer* init_dense_layer(int input_dim , int output_dim ,int batch_size){
-    DenseLayer *layer = (DenseLayer*)malloc(sizeof(DenseLayer));
+DenseLayer* init_dense_layer(MemoryArena *arena, int input_dim , int output_dim ,int batch_size){
+    DenseLayer *layer = (DenseLayer*)arena_alloc(arena,sizeof(DenseLayer));
+    //if layer is null
+    if(!layer){
+        return NULL;
+    }
 
     //İnitilaze Weights
-    layer->weights = create_matrix(input_dim,output_dim);
+    layer->weights = create_matrix_area(arena,input_dim,output_dim);
     randomize_matrix(layer->weights);
     //optimizing cache
-    layer->weights_T = create_matrix(output_dim, input_dim);
+    layer->weights_T = create_matrix_area(arena,output_dim, input_dim);
     transpose_matrix(layer->weights, layer->weights_T);
 
     //İnitilaze Biases
-    layer->biases = create_matrix(1,output_dim);
+    layer->biases = create_matrix_area(arena,1,output_dim);
 
     //Allocate Memory for Forward Pass States
-    layer->z = create_matrix(batch_size,output_dim);
-    layer->a = create_matrix(batch_size,output_dim);
+    layer->z = create_matrix_area(arena,batch_size,output_dim);
+    layer->a = create_matrix_area(arena,batch_size,output_dim);
 
     //Allocate Memory for BackPropagation Gradients
-    layer->delta = create_matrix(batch_size,output_dim);
-    layer->dW    = create_matrix(input_dim,output_dim);
-    layer->db    = create_matrix(1,output_dim);
+    layer->delta = create_matrix_area(arena,batch_size,output_dim);
+    layer->dW    = create_matrix_area(arena,input_dim,output_dim);
+    layer->db    = create_matrix_area(arena,1,output_dim);
     
     return layer ; 
 }
@@ -213,19 +265,7 @@ DenseLayer* init_dense_layer(int input_dim , int output_dim ,int batch_size){
 #-----------------------------
 */
 // Safely frees all allocated matrix memory within the layer to prevent memory leaks
-void free_dense_layer(DenseLayer *layer) {
-    if(layer != NULL){
-        free_matrix(layer->weights);
-        free_matrix(layer->weights_T);
-        free_matrix(layer->biases);
-        free_matrix(layer->z);
-        free_matrix(layer->a);
-        free_matrix(layer->delta);
-        free_matrix(layer->dW);
-        free_matrix(layer->db);
-        free(layer);
-    }
-}
+
 /*
 #--------------------------
 # Loss function
