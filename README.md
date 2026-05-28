@@ -1,67 +1,161 @@
 # ARdL C-Engine 🧠
 
-A High-Performance, Bare-Metal Neural Network Engine written in Pure C from scratch.
+A **high-performance neural network engine written in pure C**, designed with a strict **hardware-first philosophy**.
 
-ARdL is designed with a strict "hardware-first" philosophy. It completely bypasses heavy libraries (like NumPy or TensorFlow) and focuses on raw CPU performance, making it highly suitable for embedded systems, microcontrollers (like ESP32), and edge computing.
+ARdL avoids heavy frameworks (like TensorFlow or PyTorch) and focuses on **deterministic memory usage, cache efficiency, and embedded compatibility**.
 
-## 🚀 Architectural Optimizations
+---
 
-This engine isn't just a translation of mathematical formulas into C; it is deeply optimized for memory hierarchy and CPU cache architecture.
+## 🚀 Key Features
 
-### 1. Zero-Allocation Training Loop (No Memory Leaks)
-Dynamic memory allocation (`malloc`/`free`) inside a training loop is a major bottleneck. ARdL pre-allocates all necessary states (Weights, Biases, Z, A, dW, db, Deltas) strictly once during the `init_dense_layer` phase. The engine runs 2000+ epochs without asking the OS for a single byte of memory, ensuring **zero memory leaks** and eliminating garbage collection latency.
+### ⚡ Zero-Allocation Training Loop
 
-### 2. Cache-Optimized GEMM (Matrix Multiplication)
-Standard matrix multiplication ($O(N^3)$) causes severe L1/L2 Cache Misses when reading the second matrix vertically. ARdL solves this by incorporating a **Pre-Transpose Optimization**:
-* The weight matrix is transposed once before the forward pass.
-* The inner `k` loop iterates over contiguous memory addresses for *both* matrices (`A->data[i * cols + k]` and `B_T->data[j * cols + k]`).
-* This horizontal memory access pattern maximizes cache hits and drastically reduces CPU cycle waste.
+* No `malloc` / `free` during training
+* All memory is preallocated at initialization
+* Deterministic execution (ideal for embedded systems)
+* No fragmentation, no runtime allocation overhead
 
-### 3. Flat Memory Architecture (1D Arrays)
-Instead of using slow, pointer-chasing 2D arrays (`float**`), ARdL stores all matrices as contiguous blocks of 1D memory (`float*`). 2D coordinates are mapped mathematically using `index = row * total_columns + col`. This ensures strict Row-Major order execution, allowing the CPU to pre-fetch data seamlessly.
+---
 
-### 4. In-Place Backpropagation
-The engine computes gradients and distributes the categorical cross-entropy loss backwards using the Chain Rule. Instead of creating temporary matrices for $A_{prev}^T$, ARdL performs "live transpose reads" during the gradient computation, updating weights and biases directly in memory.
+### 🧠 Custom Arena Allocator
 
-## 🛠️ Quick Start & Compilation
+ARdL uses a custom memory system:
 
-No external dependencies are required. The engine relies purely on the standard C library (`<stdlib.h>`, `<math.h>`).
+* Single contiguous memory block
+* Fast linear allocation via pointer offset
+* Resettable memory region
+* Full control over memory layout
 
-**Compile the Engine (Example with XOR Training):**  
+**Example:**
 
+```
+XOR Model Total Memory Usage: ~896 bytes
+```
 
-```gcc train_nn.c nn_layers.c -o ardl_engine -lm -O3```
-**Run the Engine:**  
+---
 
-```./ardl_engine```  
+### ⚙️ Cache-Optimized Matrix Operations
 
+Standard matrix multiplication causes cache misses due to column access.
 
+ARdL solves this using:
 
-![ARdL Training Output](terminal_output.png)
+* **Pre-transposed weight matrices**
+* Row-major contiguous access pattern
+* Cache-friendly memory traversal
 
+Result:
 
+* Fewer cache misses
+* Higher CPU efficiency
 
+---
+
+### 🧩 Flat Memory Architecture
+
+* All matrices stored as `float*` (1D arrays)
+* No `float**` pointer chasing
+* Manual index mapping:
+
+```
+index = row * cols + col
+```
+
+This ensures:
+
+* Sequential memory access
+* CPU prefetch efficiency
+
+---
+
+### 🔁 In-Place Backpropagation
+
+* No temporary matrix allocations
+* Gradients computed using **live transpose reads**
+* Memory reused across operations
+
+---
+
+## 🛠️ Build & Run
+
+### Compile
+
+```bash
+gcc train.c nn_layers.c -o ardl -lm -O3 -march=native -ffast-math
+```
+
+### Run
+
+```bash
+./ardl
+```
+
+---
+
+## 📊 Example Output
+
+```
+Epoch 0    | Loss: 0.250192 | Arena: 896 bytes
+Epoch 200  | Loss: 0.077776 | Arena: 896 bytes
+...
+Epoch 2000 | Loss: 0.000007 | Arena: 896 bytes
+
+[OK] No memory leak detected
+```
+
+---
+
+## 🧪 XOR Training Result
+
+```
+[0, 0] → ~0.00
+[0, 1] → ~1.00
+[1, 0] → ~1.00
+[1, 1] → ~0.00
+```
+
+---
+
+## 🧠 Why ARdL?
+
+Most ML libraries optimize for **flexibility and abstraction**.
+
+ARdL optimizes for:
+
+* 🔹 **Memory determinism**
+* 🔹 **Cache locality**
+* 🔹 **Low-level control**
+* 🔹 **Embedded deployment**
+
+---
 
 ## 🗺️ Roadmap
 
-The core engine is complete, but ARdL is an evolving project. Future milestones include:
+* [x] Arena Allocator (Deterministic Memory)
+* [x] Dense Layers (Forward & Backward)
+* [x] Cache-Optimized GEMM
+* [ ] Scratch vs Persistent Memory Separation
+* [ ] Buffer Reuse Optimization
+* [ ] Model Save / Load
+* [ ] CNN Support
+* [ ] Quantization (float → int)
 
-- [x] Dense (Fully Connected) Layers
-- [x] Forward & Backward Propagation
-- [x] Cache-Optimized Matrix Operations
-- [ ] Save / Load Model Weights Functionality
-- [ ] Convolutional Neural Networks (CNN) Integration
+---
 
 ## 🤝 Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change or optimize further. 
+Contributions are welcome.
 
-## 📝 License
+If you plan major changes, please open an issue first to discuss the design.
 
-This project is licensed under the [MIT License](https://choosealicense.com/licenses/mit/).
+---
 
-### 🖊️ Author 
+## 📜 License
 
-**Ali Arhan İla**  
-[GitHub Profile](https://github.com/aliarhanila)  
-[LinkedIn Profile](https://www.linkedin.com/in/ali-arhan-ila-693a2830b/)
+MIT License
+
+---
+
+## 🖊️ Author
+
+**Ali Arhan İla**
