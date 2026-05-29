@@ -1,5 +1,5 @@
-//ardl_core.c
-//Final , Cache-Optimized Forward Pass Engine
+// ardl_core.c
+// Final, Cache-Optimized Forward Pass Engine
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -8,11 +8,9 @@
 
 /*
 #----------------------------
-# Memory Area Function
+# Memory Area Functions
 #---------------------------
 */
-
-//Arena İnit
 MemoryArena* arena_create(size_t size){
     MemoryArena *arena = malloc(sizeof(MemoryArena));
     arena->buffer = malloc(size);
@@ -21,10 +19,8 @@ MemoryArena* arena_create(size_t size){
     return arena;
 }
 
-//Arena Alloc Function
-void* arena_alloc(MemoryArena *arena,size_t size){
-    //alignment 
-    size = (size + 7) & ~7; // 8 byte alignment(for embedded systems)
+void* arena_alloc(MemoryArena *arena, size_t size){
+    size = (size + 7) & ~7; // 8-byte alignment for stable memory mapping
 
     if(arena->offset + size > arena->size){
         printf("Error (Memory): Arena out of memory!\n");
@@ -32,81 +28,106 @@ void* arena_alloc(MemoryArena *arena,size_t size){
     }
 
     void *ptr = (void*)(arena->buffer + arena->offset);
-
-    arena->offset +=size;
-
+    arena->offset += size;
     return ptr;
 }
 
-//arena offset reset function
 void arena_reset(MemoryArena *arena){
     arena->offset = 0;
 }
 
-//Erase Arena function
 void arena_free(MemoryArena *arena){
     free(arena->buffer);
     free(arena);
 }
-
 
 /*
 # ---------------------------
 #  Activations
 # ---------------------------
 */
-
 float ReLu(float x){
-    return fmaxf(0.0f,x);
+    return fmaxf(0.0f, x);
 }
+
 float ReLu_grad(float x){
     return (x > 0.0f) ? 1.0f : 0.0f;
 }
 
+// Added to prevent dying ReLU problem
+float LeakyReLu(float x){
+    return (x > 0.0f) ? x : 0.01f * x;
+}
+
+float LeakyReLu_grad(float x){
+    return (x > 0.0f) ? 1.0f : 0.01f;
+}
+
 float sigmoid(float x){
-    return 1.0f/(1.0f+expf(-x));
+    return 1.0f / (1.0f + expf(-x));
 }
 
 float sigmoid_grad(float x){
     float s = sigmoid(x);
     return s * (1.0f - s);
 }
+
+void softmax(Matrix *z, Matrix *a) {
+    int batch_size = z->rows;
+    int out_dim = z->cols;
+    
+    for (int i = 0; i < batch_size; i++) {
+        // Step 1: Find max value for numerical stability (prevent overflow)
+        float max_val = z->data[i * out_dim];
+        for (int j = 1; j < out_dim; j++) {
+            if (z->data[i * out_dim + j] > max_val) {
+                max_val = z->data[i * out_dim + j];
+            }
+        }
+
+        // Step 2: Subtract max_val, apply exp(), and calculate sum
+        float sum_exp = 0.0f;
+        for (int j = 0; j < out_dim; j++) {
+            float e = expf(z->data[i * out_dim + j] - max_val);
+            a->data[i * out_dim + j] = e;
+            sum_exp += e;
+        }
+
+        // Step 3: Divide by sum to get probability distribution
+        for (int j = 0; j < out_dim; j++) {
+            a->data[i * out_dim + j] /= sum_exp;
+        }
+    }
+}
+
 /*
 #---------------------------------
 # Matrix Creations and release
 #----------------------------------
 */
-Matrix* create_matrix_area(MemoryArena *arena,int rows, int cols){
-    Matrix *mat = (Matrix*)arena_alloc(arena ,sizeof(Matrix));
-    if(!mat){
-        return NULL;
-    } 
+Matrix* create_matrix_area(MemoryArena *arena, int rows, int cols){
+    Matrix *mat = (Matrix*)arena_alloc(arena, sizeof(Matrix));
+    if(!mat) return NULL;
 
     mat->rows = rows;
     mat->cols = cols;
+    mat->data = (float*)arena_alloc(arena, rows * cols * sizeof(float));
     
-    mat->data = (float*)arena_alloc(arena , rows * cols * sizeof(float));
+    if(!mat->data) return NULL;
     
-    // if memory data is not allocated
-    if(!mat->data){
-        return NULL;
-    }
-    
-
     return mat;
 }
 
-
 /*
 #----------------------------
-#Random Number Generator Function
+# Random Number Generator
 #---------------------------
 */
 float random_randn() {
     float u1 = (float)rand() / (float)RAND_MAX;
     float u2 = (float)rand() / (float)RAND_MAX;
     
-    //(epsilon)
+    // Prevent log(0) calculation
     if (u1 <= 1e-7f) u1 = 1e-7f; 
     
     // Box-Muller Transformation
@@ -118,177 +139,154 @@ float random_randn() {
 # Random Number Matrix
 #-----------------------------
 */
-void randomize_matrix(Matrix *mat) {
+void randomize_matrix_xavier(Matrix *mat, int fan_in){
+    float scale = sqrtf(1.0f / fan_in);
     for (int i = 0; i < mat->rows * mat->cols; i++) {
-        mat->data[i] = random_randn() * 0.1f; 
+        mat->data[i] = random_randn() * scale;
     }
 }
 
+void randomize_matrix_he(Matrix *mat, int fan_in){
+    float scale = sqrtf(2.0f / fan_in);
+    for (int i = 0; i < mat->rows * mat->cols; i++) {
+        mat->data[i] = random_randn() * scale;
+    }
+}
 
 /*
 #-------------------------
 # Matrix Operations 
 #-------------------------
 */
-
-// Transpose matrix for cache optimization (Row-Major to Column-Major mapping)
 void transpose_matrix(const Matrix *src, Matrix *dst) {
-    
-    // 1. Safety Check: Destination matrix dimensions must be the inverse of the source.
     if (src->rows != dst->cols || src->cols != dst->rows) {
-        printf("Error (transpose_matrix): Dimension mismatch! SRC(%d,%d) -> DST(%d,%d)\n", 
-               src->rows, src->cols, dst->rows, dst->cols);
+        printf("Error (transpose_matrix): Dimension mismatch!\n");
         return;
     }
-
-    // 2. Transpose Loop
     for (int i = 0; i < src->rows; i++) {
         for (int j = 0; j < src->cols; j++) {
-            
-            // Read formula from source matrix: (row * total_columns + col)
             float val = src->data[i * src->cols + j];
-            
-            // Write formula to destination matrix (Critical Point):
-            // i and j are swapped! dst->cols is actually equal to src->rows.
             dst->data[j * dst->cols + i] = val;
         }
     }
 }
 
-// General Matrix Multiplication (Dot Product)
 void matrix_dot(const Matrix *A, const Matrix *B, Matrix *C) {
+    if(A->cols != B->rows) return;
     
-    // Matrix dimensions check
-    if(A->cols != B->rows) {
-        printf("Error (matrix_dot): Matrix dimensions are incompatible A(%d,%d) x B(%d,%d)\n", 
-               A->rows, A->cols, B->rows, B->cols);
-        return;
-    }
+    for(int i = 0; i < C->rows * C->cols; i++) C->data[i] = 0.0f;
     
-    // Clear destination matrix C
-    for(int i = 0; i < C->rows * C->cols; i++) {
-        C->data[i] = 0.0f;
-    }
-    
-    // GEMM Loops
     for(int i = 0; i < A->rows; i++) {
         for(int j = 0; j < B->cols; j++) {
             float sum = 0.0f;
-
             for(int k = 0; k < A->cols; k++) {
-                
-                float a_val = A->data[i * A->cols + k];
-                float b_val = B->data[k * B->cols + j]; 
-
-                sum += a_val * b_val;
+                sum += A->data[i * A->cols + k] * B->data[k * B->cols + j];
             }
-
             C->data[i * C->cols + j] = sum;
         }
     }
 }
 
-
-
-// Optimized GEMM (Uses Transposed B to prevent Cache Misses)
 void matrix_dot_optimized(const Matrix *A, const Matrix *B_T, Matrix *C) {
+    if(A->cols != B_T->cols) return;
     
-    // Check (B_T->cols is actually original B's rows)
-    if(A->cols != B_T->cols) {
-        printf("Error (matrix_dot_opt): Dimensions incompatible!\n");
-        return;
-    }
-    
-    for(int i = 0; i < C->rows * C->cols; i++) {
-        C->data[i] = 0.0f;
-    }
+    for(int i = 0; i < C->rows * C->cols; i++) C->data[i] = 0.0f;
     
     for(int i = 0; i < A->rows; i++) {
-        for(int j = 0; j < B_T->rows; j++) { // Iterating over B_T's rows
+        for(int j = 0; j < B_T->rows; j++) {
             float sum = 0.0f;
-
             for(int k = 0; k < A->cols; k++) {
-                
-                float a_val = A->data[i * A->cols + k];
-                float b_val = B_T->data[j * B_T->cols + k]; 
-
-                sum += a_val * b_val;
+                sum += A->data[i * A->cols + k] * B_T->data[j * B_T->cols + k];
             }
             C->data[i * C->cols + j] = sum;
         }
     }
 }
 
-
 /*
 # ----------------------
-# Layer İnitilazation
+# Layer Initialization
 # ----------------------
 */
+DenseLayer* init_dense_layer(MemoryArena *arena, int input_dim , int output_dim, int batch_size, int activation_type){
+    DenseLayer *layer = (DenseLayer*)arena_alloc(arena, sizeof(DenseLayer));
+    if(!layer) return NULL;
+    
+    // Assign activation type to the layer
+    layer->activation_type = activation_type; 
 
-//Allocates memory for a complate dense layer and initializes weights/biases
+    layer->weights = create_matrix_area(arena, input_dim, output_dim);
 
-DenseLayer* init_dense_layer(MemoryArena *arena, int input_dim , int output_dim ,int batch_size){
-    DenseLayer *layer = (DenseLayer*)arena_alloc(arena,sizeof(DenseLayer));
-    //if layer is null
-    if(!layer){
-        return NULL;
+    if (activation_type == 0) {
+        randomize_matrix_he(layer->weights, input_dim);
+    } else {
+        randomize_matrix_xavier(layer->weights, input_dim);
     }
 
-    //İnitilaze Weights
-    layer->weights = create_matrix_area(arena,input_dim,output_dim);
-    randomize_matrix(layer->weights);
-    //optimizing cache
-    layer->weights_T = create_matrix_area(arena,output_dim, input_dim);
+    layer->weights_T = create_matrix_area(arena, output_dim, input_dim);
     transpose_matrix(layer->weights, layer->weights_T);
 
-    //İnitilaze Biases
-    layer->biases = create_matrix_area(arena,1,output_dim);
+    layer->biases = create_matrix_area(arena, 1, output_dim);
+    for (int i = 0; i < output_dim; i++){
+        layer->biases->data[i] = 0.0f;
+    }
 
-    //Allocate Memory for Forward Pass States
-    layer->z = create_matrix_area(arena,batch_size,output_dim);
-    layer->a = create_matrix_area(arena,batch_size,output_dim);
+    layer->z = create_matrix_area(arena, batch_size, output_dim);
+    layer->a = create_matrix_area(arena, batch_size, output_dim);
 
-    //Allocate Memory for BackPropagation Gradients
-    layer->delta = create_matrix_area(arena,batch_size,output_dim);
-    layer->dW    = create_matrix_area(arena,input_dim,output_dim);
-    layer->db    = create_matrix_area(arena,1,output_dim);
+    layer->delta = create_matrix_area(arena, batch_size, output_dim);
+    layer->dW    = create_matrix_area(arena, input_dim, output_dim);
+    layer->db    = create_matrix_area(arena, 1, output_dim);
     
-    return layer ; 
+    return layer; 
 }
-
-/*
-#-----------------------------
-# Layer Destruction
-#-----------------------------
-*/
-// Safely frees all allocated matrix memory within the layer to prevent memory leaks
 
 /*
 #--------------------------
-# Loss function
+# Loss functions
 #------------------------
 */
-float categorical_crossentropy(Matrix *y_true,Matrix *y_pred){
-    if(y_true->rows != y_pred->rows || y_true->cols != y_pred->cols){
-        printf("Error(crossentropy): Dimensions incompatible! Y_true(%d,%d) vs Y_pred(%d,%d)\n", 
-               y_true->rows, y_true->cols, y_pred->rows, y_pred->cols);
-        return -1.0f;
+
+float mse_loss(Matrix *y_true, Matrix *y_pred){
+    float total_loss = 0.0f;
+    int total_elements = y_true->rows * y_true->cols;
+    
+    for(int i = 0 ; i < total_elements ; i++){
+        float err = y_pred->data[i] - y_true->data[i];
+        total_loss += err * err;
     }
     
+    return total_loss / (float)y_true->rows;
+}
+
+float binary_crossentropy(Matrix *y_true, Matrix *y_pred){
     float total_loss = 0.0f;
     int batch_size = y_true->rows;
-    int total_elements = y_true->rows *y_true->cols;
+    int total_elements = y_true->rows * y_true->cols;
     
     for(int i = 0 ; i < total_elements ; i++){
         float y_t = y_true->data[i];
         float y_p = y_pred->data[i];
+        
+        // Add epsilon (1e-9) to prevent log(0) calculation
+        total_loss += -(y_t * logf(y_p + 1e-9f) + (1.0f - y_t) * logf(1.0f - y_p + 1e-9f));
+    }
+    
+    return (total_loss / (float)batch_size);
+}
 
-
+float categorical_crossentropy(Matrix *y_true, Matrix *y_pred){
+    float total_loss = 0.0f;
+    int batch_size = y_true->rows;
+    int total_elements = y_true->rows * y_true->cols;
+    
+    for(int i = 0 ; i < total_elements ; i++){
+        float y_t = y_true->data[i];
+        float y_p = y_pred->data[i];
         total_loss += y_t * logf(y_p + 1e-9f);
     }
     
-    return -(total_loss/ (float)batch_size);
+    return -(total_loss / (float)batch_size);
 }
 
 /*
@@ -296,30 +294,35 @@ float categorical_crossentropy(Matrix *y_true,Matrix *y_pred){
 # Forward Propagation
 #-----------------------------
 */
-// Executes the forward pass for a single layer: Z = Input * W + b, then A = Activation(Z)
-// activation_type: 0 for ReLu, 1 for Sigmoid
-void forward_pass(DenseLayer *layer,Matrix *input_a,int activation_type){
-    //Compute matrix multiplication (Z = input_a *W)
-    matrix_dot_optimized(input_a ,layer->weights_T , layer->z);
+void forward_pass(DenseLayer *layer, Matrix *input_a)
+{
+    // 1. Z = W^T * X
+    matrix_dot_optimized(input_a, layer->weights_T, layer->z);
 
-    //Add Bias vector with broadcasting over the batch rows (Z = Z + b)
-    for(int i = 0 ; i < layer->z->rows ; i++){
-        for(int j = 0 ; j<layer->z->cols ; j++){
-            // Index mapping for Row Major 1D array execution
-            layer->z->data[i * layer->z->cols +j] += layer->biases->data[j];
+    // 2. Z = Z + bias
+    for(int i = 0; i < layer->z->rows; i++){
+        for(int j = 0; j < layer->z->cols; j++){
+            layer->z->data[i * layer->z->cols + j] += layer->biases->data[j];
         }
     }
 
-    int total_elements = layer->z->rows *layer->z->cols;
-    for(int i = 0 ; i < total_elements ; i++){
-        if (activation_type == 0){
-            layer->a->data[i] = ReLu(layer->z->data[i]);
-        }
-        else if (activation_type == 1){
-            layer->a->data[i] = sigmoid(layer->z->data[i]);
+    // 3. Activation
+    if (layer->activation_type == 3) {
+        // Softmax works vectorially (Row by row)
+        softmax(layer->z, layer->a);
+    } 
+    else {
+        // Others work element-wise (Scalar)
+        int total = layer->z->rows * layer->z->cols;
+        for(int i = 0; i < total; i++){
+            if (layer->activation_type == 0)
+                layer->a->data[i] = LeakyReLu(layer->z->data[i]);
+            else if (layer->activation_type == 1)
+                layer->a->data[i] = sigmoid(layer->z->data[i]);
+            else if (layer->activation_type == 2)
+                layer->a->data[i] = layer->z->data[i]; // Linear
         }
     }
-
 }
 
 /*
@@ -327,57 +330,89 @@ void forward_pass(DenseLayer *layer,Matrix *input_a,int activation_type){
 # Backpropagation
 #-----------------------
 */
+void compute_gradients(DenseLayer *layer, Matrix *input_a){
+    float batch_size = (float)layer->delta->rows; 
 
-// Calculates Gradients(dW,db) based on the layer's current delta
-void compute_gradients(DenseLayer *layer , Matrix *input_a){
-
-    //Biases Gradient
-    for(int j = 0 ; j < layer->db->cols ; j++){
-         layer->db->data[j] = 0.0f;
-    }
-    for(int i = 0 ; i < layer->delta->rows ; i++){//batch size
-        for(int j = 0 ; j < layer->db->cols ; j++){
-            //row major optimized "db" 
-            layer->db->data[j] += layer->delta->data[i * layer->delta->cols +j];
+    // Biases Gradient
+    for(int j = 0; j < layer->db->cols; j++){
+        float sum = 0.0f;
+        for(int i = 0; i < layer->delta->rows; i++){
+            sum += layer->delta->data[i * layer->delta->cols + j];
         }
-        
+        // Gradient Normalization
+        layer->db->data[j] = sum / batch_size;
     }
-        
-    
-    //Weights Gradient
-    // We do a live transpose read to avoid allocating memory for input_a^T
-    for(int i = 0 ; i < input_a->cols ; i++){
-        for(int j = 0 ; j < layer->delta->cols; j++){
+
+    // Weights Gradient
+    for(int i = 0; i < input_a->cols; i++){
+        for(int j = 0; j < layer->delta->cols; j++){
             float sum = 0.0f;
-            for(int k = 0 ; k < input_a->rows; k++){
-                // input_a^T[i, k] is read as input_a[k, i] from memory
+            for(int k = 0; k < input_a->rows; k++){
                 float a_val = input_a->data[k * input_a->cols + i];
                 float d_val = layer->delta->data[k * layer->delta->cols + j];
-                
                 sum += a_val * d_val;
             }
-            // Write the computed gradient to dW
-            layer->dW->data[i * layer->dW->cols + j] = sum;
+            // Gradient Normalization
+            layer->dW->data[i * layer->dW->cols + j] = sum / batch_size;
         }
     }
-
 }
 
-
-// Applies Gradient Descent to Update Weights And Biases
-void update_weights(DenseLayer *layer,float lr){
-
-    //Update Weights
-    int w_elements = layer->weights->rows*layer->weights->cols;
-    for(int i = 0 ; i < w_elements ; i++){
+void update_weights(DenseLayer *layer, float lr){
+    int w_elements = layer->weights->rows * layer->weights->cols;
+    for(int i = 0; i < w_elements; i++){
         layer->weights->data[i] -= lr * layer->dW->data[i]; 
     }
 
-    //Update Biases
-    int b_elements = layer->biases->rows*layer->biases->cols;
-    for(int i = 0 ; i < b_elements ; i++){
+    int b_elements = layer->biases->rows * layer->biases->cols;
+    for(int i = 0; i < b_elements; i++){
         layer->biases->data[i] -= lr * layer->db->data[i]; 
     }
 
-    transpose_matrix(layer->weights ,layer->weights_T);
+    transpose_matrix(layer->weights, layer->weights_T);
+}
+
+/*
+#-----------------------------
+# Model Save & Load (Production)
+#-----------------------------
+*/
+
+// Saves layer weights and biases to a binary (.bin) file
+void save_layer(DenseLayer *layer, const char *filename) {
+    FILE *file = fopen(filename, "wb"); 
+    if (!file) {
+        printf("ERROR: Cannot create file %s!\n", filename);
+        return;
+    }
+
+    int w_size = layer->weights->rows * layer->weights->cols;
+    fwrite(layer->weights->data, sizeof(float), w_size, file);
+
+    int b_size = layer->biases->rows * layer->biases->cols;
+    fwrite(layer->biases->data, sizeof(float), b_size, file);
+
+    fclose(file);
+    printf(">> Layer successfully saved to disk: %s\n", filename);
+}
+
+// Loads layer weights and biases from a binary (.bin) file
+void load_layer(DenseLayer *layer, const char *filename) {
+    FILE *file = fopen(filename, "rb"); 
+    if (!file) {
+        printf("ERROR: Cannot find file %s! (Train and save the model first)\n", filename);
+        exit(1);
+    }
+
+    int w_size = layer->weights->rows * layer->weights->cols;
+    fread(layer->weights->data, sizeof(float), w_size, file);
+
+    int b_size = layer->biases->rows * layer->biases->cols;
+    fread(layer->biases->data, sizeof(float), b_size, file);
+
+    // CRITICAL: Update the transposed weights matrix immediately after loading!
+    transpose_matrix(layer->weights, layer->weights_T);
+
+    fclose(file);
+    printf(">> Layer successfully loaded from disk: %s\n", filename);
 }
