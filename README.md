@@ -1,128 +1,160 @@
 # ARdL Core: Zero-Dependency C Neural Network Engine 🧠
 
-A high-performance neural network engine written in pure C, designed with a strict hardware-first philosophy. 
+A high-performance neural network engine written in pure C, designed with a strict hardware-first philosophy.
 
 ARdL eliminates heavy abstractions found in modern ML frameworks and focuses on deterministic memory usage, cache-efficient computation, and embedded system compatibility (Edge AI).
-
----
 
 ## 🚀 Core Principles
 
 ARdL is built around three fundamental ideas:
-* Zero Dependencies – No external math libraries (BLAS, Eigen) required.
-* Deterministic Memory Usage – No runtime allocation overhead (malloc/free loops).
-* Cache Efficiency – Optimized for modern CPU memory hierarchies and microcontrollers.
 
----
+- Zero Dependencies – No external math libraries (BLAS, Eigen) required.
+
+- Deterministic Memory Usage – No runtime allocation overhead (malloc/free loops).
+
+- Cache Efficiency – Optimized for modern CPU memory hierarchies and microcontrollers.
+
+## 🛠️ How to Build
+
+This framework leverages OpenMP for multithreaded acceleration.
+
+### Prerequisites
+
+- GCC (with OpenMP support)
+
+- Make
+
+### Build Command
+
+```bash
+make
+```
+
+### Manual Compilation (Custom Flags)
+
+```bash
+gcc train.c api/ardl_model.c core/ardl_core_thread.c -o ardl_engine -lm -O3 -march=native -ffast-math -fopenmp
+```
+
+## 🚀 High Performance Computing
+
+ARdL utilizes OpenMP to maximize multi-core CPU utilization during the training phase.
+
+- Parallel GEMM: Matrix operations are parallelized across all available CPU cores.
+
+- Cache Locality: Memory access patterns are strictly designed to minimize cache misses.
+
+- Hardware-First: Built for bare-metal deployment; once trained, the inference engine runs on any architecture without dependencies.
+
+## 🦾 On-Device Training (TinyML)
+
+ARdL is designed to run training loops directly on microcontrollers like the ESP32-S3.
+
+- Edge-Ready: Capable of online learning from sensor streams (e.g., MPU6050) using on-device backpropagation.
+
+- Flash-Friendly: Export trained model parameters as static header files (ardl_embedded_model.h) to keep your code inside ROM/Flash, leaving your SRAM free for sensor data.
 
 ## ⚡ Key Features & Upgrades
 
 ### 🧠 Multi-Problem Architecture
-ARdL now supports various machine learning paradigms natively:
-* Binary Classification: Sigmoid Activation + Binary Cross-Entropy (BCE)
-* Multi-Class Classification: Vectorial Softmax + Categorical Cross-Entropy
-* Regression: Linear Activation + Mean Squared Error (MSE)
-* Hidden Layers: Integrated LeakyReLU to prevent "dead neuron" problems.
+
+ARdL supports various machine learning paradigms natively:
+
+- Binary Classification: Sigmoid Activation + Binary Cross-Entropy (BCE)
+
+- Multi-Class Classification: Vectorial Softmax + Categorical Cross-Entropy
+
+- Regression: Linear Activation + Mean Squared Error (MSE) / MSLE
+
+- Hidden Layers: Integrated LeakyReLU and Tanh for smooth non-linear mapping.
 
 ### 💾 Production-Ready Inference (Save/Load)
-Training is only half the battle. ARdL now supports exporting models for production:
-* Save trained weights and biases directly to lightweight .bin files (save_layer).
-* Load models in milliseconds for real-time inference on Edge devices (load_layer).
-* Skip training entirely in production environments.
+
+- Save trained weights and biases directly to lightweight .bin files.
+
+- Load models in milliseconds for real-time inference on Edge devices.
+
+- Model-agnostic design: Train on desktop, deploy on bare-metal.
 
 ### 🔒 Deterministic Memory Execution & Custom Arena Allocator
-* Single contiguous memory block allocated at startup via MemoryArena.
-* Linear allocation using pointer offsets (constant-time allocation).
-* Completely prevents memory leaks and fragmentation.
-* Perfect for bare-metal programming and microcontrollers (ESP32, STM32).
 
-### ⚙️ Cache-Optimized Matrix Operations
-* Pre-transposed weight matrices to prevent cache misses.
-* Strict row-major contiguous access.
-* Flat memory architecture: All matrices are contiguous float arrays (no pointer chasing).
-* In-place backpropagation with live transpose reads.
+- Single contiguous memory block allocated at startup via MemoryArena.
 
----
+- Linear allocation using pointer offsets (constant-time allocation).
+
+- Completely prevents memory leaks and fragmentation.
 
 ## 📖 User Guide: How to Use train.c
 
-ARdL uses a unified train.c file controlled by a single macro configuration.
+ARdL uses separate binaries for training and inference. You train your model using train.c, export the weights, and then load them into your inference engine.
 
-### The TRAIN_MODE Switch
-At the top of train.c, you will find the configuration flag:
+### Workflow
 
-    #define TRAIN_MODE 1 
+1. Configure your architecture in train.c using the High-Level API.
 
-* Mode 1 (Training & Export): Initializes random weights, trains the model using the provided dataset, displays accuracy, and exports the trained layers as .bin files.
-* Mode 0 (Inference Only): Skips training completely. It instantly loads the pre-trained weights from .bin files and runs inference (predictions) on new data. Ideal for Edge deployment.
+2. Run make (or compile manually) to train the model and generate kinetik_motor.ardl.
 
-### Example Architecture (Iris Dataset)
-Defining a Multi-Class Neural Network (4 Inputs, 16 -> 8 Hidden, 3 Outputs) takes only 3 lines:
+3. The training routine automatically produces ardl_embedded_model.h for embedded deployment.
 
-    // Hidden layers use LeakyReLU (Activation type: 0)
-    DenseLayer *l1 = init_dense_layer(arena, 4, 16, batch, 0); 
-    DenseLayer *l2 = init_dense_layer(arena, 16, 8, batch, 0); 
+4. Use inference.c to load the .ardl file and run real-time predictions.
 
-    // Output layer uses Softmax (Activation type: 3) for 3 classes
-    DenseLayer *l3 = init_dense_layer(arena, 8, 3, batch, 3);  
+### Defining Architecture
 
----
+Defining a Neural Network takes only a few lines:
 
-## 📊 Training Output (Iris Dataset)
+```c
+// Hidden layers use Tanh (Activation type: 3)
+DenseLayer *l1 = init_dense_layer(arena, 2, 32, batch, 3);
+DenseLayer *l2 = init_dense_layer(arena, 32, 16, 3);
 
-    === IRIS DATASET MULTI-CLASS CLASSIFICATION ===
+// Output layer uses Linear (Activation type: 0)
+DenseLayer *l3 = init_dense_layer(arena, 16, 1, 0);
+```
 
-    >> Dataset loaded successfully: 150 samples read.
+## 📊 Training Output
 
-    === MODE 1: TRAINING AND EXPORT ===
+```
+=== ArdL Framework v1.0 ===
 
-    Epoch    0 | Loss: 1.1899 | Accuracy: %26.0
-    Epoch  500 | Loss: 0.1360 | Accuracy: %98.0
-    Epoch 1000 | Loss: 0.0899 | Accuracy: %98.0
-    Epoch 1500 | Loss: 0.0764 | Accuracy: %98.7
+[INFO] Training Pipeline Triggered...
 
-    === EXPORTING TRAINED MODEL ===
-    >> Layer successfully saved to disk: model_l1.bin
-    >> Layer successfully saved to disk: model_l2.bin
-    >> Layer successfully saved to disk: model_l3.bin
+Epoch      0 | LR: 0.10000 | MSLE Loss: 0.8543 | R2: %12.45
+Epoch  15000 | LR: 0.05000 | MSLE Loss: 0.0210 | R2: %88.20
+Epoch  30000 | LR: 0.02500 | MSLE Loss: 0.0042 | R2: %99.12
 
-    === RUNNING INFERENCE TEST ===
-    Sample [120] Features (cm): 6.9, 3.2, 5.7, 2.3
-    Model Predictions:
-      - Setosa      :  0.00%
-      - Versicolor  :  0.25%
-      - Virginica   : 99.75%
-
----
+[INFO] Pipeline Completed Successfully!
+[INFO] Model architecture and weights successfully saved: kinetik_motor.ardl
+[INFO] Model exported as static C Header: ardl_embedded_model.h
+```
 
 ## 🗺️ Roadmap
 
-* [x] Arena Allocator (Deterministic Memory)
-* [x] Dense Layers (Forward & Backward)
-* [x] Cache-Optimized GEMM
-* [x] Multi-Class & Regression Support (Softmax, MSE, BCE)
-* [x] Production Model Save / Load (.bin)
-* [ ] Advanced Optimizers (Momentum, Adam)
-* [ ] Scratch vs Persistent Memory Separation
-* [ ] Quantization (float → int8) for Ultra-Low Power Devices
+- [x] Arena Allocator (Deterministic Memory)
 
----
+- [x] Dense Layers (Forward & Backward)
+
+- [x] Cache-Optimized GEMM + OpenMP
+
+- [x] Multi-Class & Regression Support
+
+- [x] Production Model Save / Load (.bin)
+
+- [ ] Advanced Optimizers (Momentum, Adam)
+
+- [ ] Quantization (float to int8) for Ultra-Low Power Devices
 
 ## 🤝 Contributing
 
-Contributions are welcome! If you want to port this engine to specific microcontrollers or add optimizations, feel free to submit a Pull Request. For major architectural changes, please open an issue first to discuss design decisions.
-
----
+Contributions are welcome! If you want to port this engine to specific microcontrollers or add optimizations, feel free to submit a Pull Request.
 
 ## 📜 License
 
 GNU General Public License v3.0 License
 
----
-
 ## 🖊️ Author
 
-**Ali Arhan İla**
+Ali Arhan İla
 
-* GitHub: https://github.com/aliarhanila
-* LinkedIn: https://www.linkedin.com/in/ali-arhan-ila-693a2830b/
+- GitHub: https://github.com/aliarhanila
+
+- LinkedIn: https://www.linkedin.com/in/ali-arhan-ila-693a2830b/
