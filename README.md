@@ -127,7 +127,7 @@ performance on both desktops and microcontrollers:
 
 3.Architecture Definition: Configures the layer stack and pre-transposes matrices to cache-friendly states (weights_T).  
 
-4.Execution & Export: Runs the training loop, saves the binary weights for desktop testing, and generates the C Header for microcontrollers.  
+4.Execution & Export: Runs the training loop, saves the binary weights for desktop testing, and generates the C Header for  microcontrollers.  
 
 
 ## 📊 Training Output
