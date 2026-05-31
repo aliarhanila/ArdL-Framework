@@ -101,18 +101,34 @@ ARdL uses separate binaries for training and inference. You train your model usi
 
 4. Use inference.c to load the .ardl file and run real-time predictions.
 
-### Defining Architecture
+### Defining Architecture  
 
-Defining a Neural Network takes only a few lines:
+You define the neural network structure in train.c by initializing dense layers sequentially within your MemoryArena.  
+
+Example configuration for a 2-64-32-16-1 architecture:  
 
 ```c
-// Hidden layers use Tanh (Activation type: 3)
-DenseLayer *l1 = init_dense_layer(arena, 2, 32, batch, 3);
-DenseLayer *l2 = init_dense_layer(arena, 32, 16, 3);
-
-// Output layer uses Linear (Activation type: 0)
-DenseLayer *l3 = init_dense_layer(arena, 16, 1, 0);
+// 3. Define Neural Network Architecture 
+ardl_add_dense(model, 2, 64, TANH);
+ardl_add_dense(model, 64, 32, TANH);
+ardl_add_dense(model, 32, 16, TANH);
+ardl_add_dense(model, 16, 1, LINEAR);
 ```
+Note: ardl_add_dense internally calls init_dense_layer and manages the DenseLayer  
+pointer allocation within the SequentialModel structure.
+
+### train.c: Training Pipeline Logic ###
+train.c is the engine of the ARdL Framework. It manages a 4-stage process to ensure optimal  
+performance on both desktops and microcontrollers:
+
+1.Initialization: Allocates memory via MemoryArena to ensure zero runtime malloc overhead.  
+
+2.Data Pipeline: Performs Z-Score and Min-Max scaling to ensure stability for non-linear activations like Tanh.  
+
+3.Architecture Definition: Configures the layer stack and pre-transposes matrices to cache-friendly states (weights_T).  
+
+4.Execution & Export: Runs the training loop, saves the binary weights for desktop testing, and generates the C Header for microcontrollers.  
+
 
 ## 📊 Training Output
 
