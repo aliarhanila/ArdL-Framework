@@ -40,11 +40,14 @@ gcc train.c api/ardl_model.c core/ardl_core_thread.c -o ardl_engine -lm -O3 -mar
 
 ARdL utilizes OpenMP to maximize multi-core CPU utilization during the training phase.
 
-- Parallel GEMM: Matrix operations are parallelized across all available CPU cores.
+- Parallel GEMM: Matrix operations are parallelized across all available CPU cores using collapse(2) for maximum throughput.
 
-- Cache Locality: Memory access patterns are strictly designed to minimize cache misses.
+- Transposition Optimization: Weight matrices are stored in pre-transposed form (weights_T). This eliminates real-time transposition overhead and ensures contiguous memory access during forward/backward passes, maximizing CPU cache hits and minimizing latency.
+
+- Cache Locality: Memory access patterns are strictly designed to minimize cache misses and avoid non-contiguous indexing.
 
 - Hardware-First: Built for bare-metal deployment; once trained, the inference engine runs on any architecture without dependencies.
+  
 
 ## 🦾 On-Device Training (TinyML)
 
