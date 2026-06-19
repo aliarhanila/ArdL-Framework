@@ -13,6 +13,8 @@ ARdL is built around three fundamental ideas:
 - Deterministic Memory Usage – No runtime allocation overhead (malloc/free loops).
 
 - Cache Efficiency – Optimized for modern CPU memory hierarchies and microcontrollers.
+- 
+- Implicit Flattening – Thanks to our cache-friendly memory layout, explicit flatten layers are completely eliminated. Conv2D and MaxPool2D tensors seamlessly feed directly into Dense layers without memory copying overhead.
 
 ## 🛠️ How to Build
 
@@ -70,6 +72,12 @@ ARdL supports various machine learning paradigms natively:
 - Regression: Linear Activation + Mean Squared Error (MSE) / MSLE
 
 - Hidden Layers: Integrated LeakyReLU and Tanh for smooth non-linear mapping.
+
+  ### 📷 Convolutional Neural Network (CNN) Engine
+- Im2col & Col2im Optimization – High-throughput image-to-column and column-to-image transformations designed to maximize L1/L2 cache hits during spatial convolutions.
+- MaxPool2D Engine – Hardware-first downsampling featuring 1D flat index tracking for zero-search O(1) backpropagation routing.
+- Multithreaded Acceleration – OpenMP parallelized forward/backward passes with atomic operations to safely handle overlapping pooling windows (race-condition free).
+- Ultra-Low Memory Footprint – The entire architecture (including CNN, MaxPool2D, and Dense layers) runs with an actual memory footprint of just ~1.4 KB, making it highly efficient for constrained edge devices.
 
 ### 💾 Production-Ready Inference (Save/Load)
 
@@ -149,17 +157,12 @@ Epoch  30000 | LR: 0.02500 | MSLE Loss: 0.0042 | R2: %99.12
 ## 🗺️ Roadmap
 
 - [x] Arena Allocator (Deterministic Memory)
-
 - [x] Dense Layers (Forward & Backward)
-
 - [x] Cache-Optimized GEMM + OpenMP
-
+- [x] Conv2D & MaxPool2D Layers (Im2col/Col2im)
 - [x] Multi-Class & Regression Support
-
 - [x] Production Model Save / Load (.bin)
-
 - [ ] Advanced Optimizers (Momentum, Adam)
-
 - [ ] Quantization (float to int8) for Ultra-Low Power Devices
 
 ## 🤝 Contributing
