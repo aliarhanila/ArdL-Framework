@@ -55,7 +55,7 @@ void ardl_add_maxpool2d(SequentialModel *model, int channels, int pool_size, int
 
 /*
 #-----------------------------------
-# Conv2D Ağırlık Güncelleme Yardımcısı
+# Conv2D Weight Update Helper
 #-----------------------------------
 */
 static void update_weights_conv2d(Conv2DLayer *layer, float lr) {
@@ -82,7 +82,7 @@ void ardl_compile_and_fit(SequentialModel *model, Matrix *X, Matrix *Y, int epoc
     for (int e = 0; e <= epochs; e++) {
         if (e > 0 && e % decay_steps == 0) lr *= decay_rate;
 
-        // 1. İLERİ BESLEME (FORWARD PASS)
+        // 1. FORWARD PASS
         for (int i = 0; i < lc; i++) {
             Matrix *input = (i == 0) ? X : model->layers[i-1].a;
             int type = model->layers[i].type;
@@ -92,25 +92,25 @@ void ardl_compile_and_fit(SequentialModel *model, Matrix *X, Matrix *Y, int epoc
             else if (type == L_MAXPOOL) forward_maxpool2d((MaxPool2DLayer*)model->layers[i].instance, input);
         }
 
-        // 2. ÇIKTIDAKİ HATAYI HESAPLA
+        // 2. CALCULATE OUTPUT ERROR
         NetLayer *last = &model->layers[lc - 1];
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < model->batch_size * last->delta->cols; i++) {
             last->delta->data[i] = last->a->data[i] - Y->data[i];
         }
 
-        // 3. GERİYE YAYILIM (BACKPROP CHAIN) & AĞIRLIK GÜNCELLEME
+        // 3. BACKPROPAGATION CHAIN & WEIGHT UPDATE
         for (int i = lc - 1; i >= 0; i--) {
             NetLayer *curr = &model->layers[i];
             NetLayer *prev = (i > 0) ? &model->layers[i-1] : NULL;
             Matrix *input = (i == 0) ? X : prev->a;
 
-            // A. Gradyanları Hesapla ve Hatayı Önceki Katmana (prev->delta) Aktar
+            // A. Calculate Gradients and Pass Error to Previous Layer (prev->delta)
             if (curr->type == L_DENSE) {
                 compute_gradients((DenseLayer*)curr->instance, input);
                 update_weights((DenseLayer*)curr->instance, lr);
                 
-                // Hatayı bir önceki katmana aktar (Dense Mantığı)
+                // Pass error to previous layer (Dense Logic)
                 if (prev) {
                     DenseLayer *dl = (DenseLayer*)curr->instance;
                     #pragma omp parallel for collapse(2)
@@ -133,7 +133,7 @@ void ardl_compile_and_fit(SequentialModel *model, Matrix *X, Matrix *Y, int epoc
                 backward_maxpool2d((MaxPool2DLayer*)curr->instance, (prev) ? prev->delta : NULL);
             }
 
-            // B. Chain Rule: Önceki Katmanın Aktivasyon Türevini (f'(z)) Uygula
+            // B. Chain Rule: Apply Previous Layer's Activation Derivative (f'(z))
             if (prev && (prev->type == L_DENSE || prev->type == L_CONV2D)) {
                 int act_type = (prev->type == L_DENSE) ? ((DenseLayer*)prev->instance)->activation_type : ((Conv2DLayer*)prev->instance)->activation_type;
                 Matrix *prev_z = (prev->type == L_DENSE) ? ((DenseLayer*)prev->instance)->z : ((Conv2DLayer*)prev->instance)->z;
@@ -148,13 +148,13 @@ void ardl_compile_and_fit(SequentialModel *model, Matrix *X, Matrix *Y, int epoc
                         else if (act_type == TANH)       grad = Tanh_grad(z_val);
                         else if (act_type == SIGMOID)    grad = sigmoid_grad(z_val);
                         
-                        prev->delta->data[idx] *= grad; // Türevi çarp ve hatayı sınırla!
+                        prev->delta->data[idx] *= grad; // Multiply by derivative to bound the error
                     }
                 }
             }
         }
 
-        // Metrik Raporlama (Örnek MSLE/MSE)
+        // Metrics Reporting (e.g., MSLE/MSE)
         if (e % (epochs / 10) == 0) {
             float loss = mse_loss(Y, last->a);
             printf("Epoch: %6d | LR: %.5f | MSE Loss: %.6f\n", e, lr, loss);
@@ -195,7 +195,7 @@ void ardl_model_summary(SequentialModel *model) {
             else if(cl->activation_type == TANH) strcpy(act_name, "Tanh");
             else strcpy(act_name, "Linear");
 
-            // Çıktı formatı: (Kanal, Yükseklik, Genişlik)
+            // Output format: (Channels, Height, Width)
             char shape_str[30];
             sprintf(shape_str, "(%d, %d, %d)", cl->out_channels, cl->output_height, cl->output_width);
             printf(" %-15s %-15s %-15s\n", "Conv2D", shape_str, act_name);
@@ -210,14 +210,14 @@ void ardl_model_summary(SequentialModel *model) {
     
     printf("=================================================================\n");
     
-    // Bellek Hesaplamaları (Arena sayesinde O(1) karmaşıklıkta!)
+    // Memory Calculations (O(1) complexity thanks to Arena!)
     size_t used_bytes = model->arena->offset;
     float used_kb = (float)used_bytes / 1024.0f;
     float used_mb = used_kb / 1024.0f;
     float total_mb = (float)model->arena->size / (1024.0f * 1024.0f);
 
-    printf(" Toplam Rezerve Edilen Arena : %.2f MB\n", total_mb);
-    printf(" Kullanilan Gercek Bellek    : %zu Bytes (%.2f KB / %.4f MB)\n", used_bytes, used_kb, used_mb);
+    printf(" Total Reserved Arena      : %.2f MB\n", total_mb);
+    printf(" Actual Memory Used        : %zu Bytes (%.2f KB / %.4f MB)\n", used_bytes, used_kb, used_mb);
     printf("=================================================================\n\n");
 }
 
