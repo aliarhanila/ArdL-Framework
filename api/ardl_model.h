@@ -1,5 +1,6 @@
 // ardl_model.h
 // Keras-like High-Level API and Architecture Manager
+
 #ifndef ARDL_MODEL_H
 #define ARDL_MODEL_H
 
@@ -45,21 +46,22 @@ typedef struct {
 */
 SequentialModel* ardl_create_sequential(size_t arena_mb, int batch_size);
 
-// Katman Ekleme Fonksiyonları
+// Layer Addition Functions
 void ardl_add_dense(SequentialModel *model, int input_dim, int output_dim, int activation_type);
 void ardl_add_conv2d(SequentialModel *model, int in_channels, int out_channels, int kernel_size, int stride, int padding, int input_height, int input_width, int activation_type);
 void ardl_add_maxpool2d(SequentialModel *model, int channels, int pool_size, int stride, int padding, int input_height, int input_width);
 
-// Eğitim Motoru
+// Training Engine
 void ardl_compile_and_fit(SequentialModel *model, Matrix *X, Matrix *Y, int epochs, float initial_lr, int decay_steps, float decay_rate);
 
-// Veri & Metrik Yardımcıları
+// Data & Metric Helpers
 void ardl_load_csv(const char *filename, Matrix *X, Matrix *Y);
 float ardl_calculate_r2(Matrix *y_true, Matrix *y_pred);
 void ardl_normalize_zscore(Matrix *X, float *out_mean, float *out_std);
 void ardl_normalize_minmax(Matrix *Y, float *out_min, float *out_max);
 void ardl_model_summary(SequentialModel *model);
-// Bellek Temizliği
+
+// Memory Management
 void ardl_free_model(SequentialModel *model);
 
 #endif
