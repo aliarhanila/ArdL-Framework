@@ -1,11 +1,12 @@
-// ardl_model.c
+// api/ardl_model.c
 // High-Level API Implementation and Training Loop
+#include "ardl_model.h"
+#include "ardl_loss.h" 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 #include <omp.h> 
-#include "ardl_model.h"
 
 /*
 #-----------------------------------
@@ -78,87 +79,102 @@ static void update_weights_conv2d(Conv2DLayer *layer, float lr) {
 void ardl_compile_and_fit(SequentialModel *model, Matrix *X, Matrix *Y, int epochs, float initial_lr, int decay_steps, float decay_rate) {
     float lr = initial_lr;
     int lc = model->layer_count;
+    int num_samples = X->rows;
+    int batch_size = model->batch_size;
+    int num_batches = num_samples / batch_size;
     
-    for (int e = 0; e <= epochs; e++) {
-        if (e > 0 && e % decay_steps == 0) lr *= decay_rate;
+    for (int e = 1; e <= epochs; e++) {
+        if (e > 1 && e % decay_steps == 0) lr *= decay_rate;
 
-        // 1. FORWARD PASS
-        for (int i = 0; i < lc; i++) {
-            Matrix *input = (i == 0) ? X : model->layers[i-1].a;
-            int type = model->layers[i].type;
-            
-            if (type == L_DENSE) forward_pass((DenseLayer*)model->layers[i].instance, input);
-            else if (type == L_CONV2D) forward_conv2d((Conv2DLayer*)model->layers[i].instance, input);
-            else if (type == L_MAXPOOL) forward_maxpool2d((MaxPool2DLayer*)model->layers[i].instance, input);
-        }
+        float epoch_loss = 0.0f;
 
-        // 2. CALCULATE OUTPUT ERROR
-        NetLayer *last = &model->layers[lc - 1];
-        #pragma omp parallel for schedule(static)
-        for (int i = 0; i < model->batch_size * last->delta->cols; i++) {
-            last->delta->data[i] = last->a->data[i] - Y->data[i];
-        }
+        // BATCH DÖNGÜSÜ: Veriyi küçük parçalara ayırarak işle (Zero-Copy)
+        for (int b = 0; b < num_batches; b++) {
+            int start_idx = b * batch_size;
 
-        // 3. BACKPROPAGATION CHAIN & WEIGHT UPDATE
-        for (int i = lc - 1; i >= 0; i--) {
-            NetLayer *curr = &model->layers[i];
-            NetLayer *prev = (i > 0) ? &model->layers[i-1] : NULL;
-            Matrix *input = (i == 0) ? X : prev->a;
+            // O anki batch için pointer aritmetiği ile sanal matrisler oluştur
+            Matrix X_batch = {batch_size, X->cols, X->data + (start_idx * X->cols)};
+            Matrix Y_batch = {batch_size, Y->cols, Y->data + (start_idx * Y->cols)};
 
-            // A. Calculate Gradients and Pass Error to Previous Layer (prev->delta)
-            if (curr->type == L_DENSE) {
-                compute_gradients((DenseLayer*)curr->instance, input);
-                update_weights((DenseLayer*)curr->instance, lr);
+            // 1. FORWARD PASS
+            for (int i = 0; i < lc; i++) {
+                Matrix *input = (i == 0) ? &X_batch : model->layers[i-1].a;
+                int type = model->layers[i].type;
                 
-                // Pass error to previous layer (Dense Logic)
-                if (prev) {
-                    DenseLayer *dl = (DenseLayer*)curr->instance;
-                    #pragma omp parallel for collapse(2)
-                    for (int r = 0; r < prev->delta->rows; r++) {
-                        for (int c = 0; c < prev->delta->cols; c++) {
-                            float sum = 0.0f;
-                            for (int k = 0; k < dl->delta->cols; k++) {
-                                sum += dl->delta->data[r * dl->delta->cols + k] * dl->weights->data[c * dl->weights->cols + k];
+                if (type == L_DENSE) forward_pass((DenseLayer*)model->layers[i].instance, input);
+                else if (type == L_CONV2D) forward_conv2d((Conv2DLayer*)model->layers[i].instance, input);
+                else if (type == L_MAXPOOL) forward_maxpool2d((MaxPool2DLayer*)model->layers[i].instance, input);
+            }
+
+            // 2. CALCULATE OUTPUT ERROR
+            NetLayer *last = &model->layers[lc - 1];
+            #pragma omp parallel for schedule(static)
+            for (int i = 0; i < batch_size * last->delta->cols; i++) {
+                // Softmax + CCE türevi doğrudan (a - y) dir.
+                last->delta->data[i] = last->a->data[i] - Y_batch.data[i];
+            }
+
+            
+            epoch_loss += categorical_crossentropy(&Y_batch, last->a);
+
+            // 3. BACKPROPAGATION CHAIN & WEIGHT UPDATE
+            for (int i = lc - 1; i >= 0; i--) {
+                NetLayer *curr = &model->layers[i];
+                NetLayer *prev = (i > 0) ? &model->layers[i-1] : NULL;
+                Matrix *input = (i == 0) ? &X_batch : prev->a;
+
+                // A. Calculate Gradients and Pass Error to Previous Layer (prev->delta)
+                if (curr->type == L_DENSE) {
+                    compute_gradients((DenseLayer*)curr->instance, input);
+                    update_weights((DenseLayer*)curr->instance, lr);
+                    
+                    if (prev) {
+                        DenseLayer *dl = (DenseLayer*)curr->instance;
+                        #pragma omp parallel for collapse(2)
+                        for (int r = 0; r < prev->delta->rows; r++) {
+                            for (int c = 0; c < prev->delta->cols; c++) {
+                                float sum = 0.0f;
+                                for (int k = 0; k < dl->delta->cols; k++) {
+                                    sum += dl->delta->data[r * dl->delta->cols + k] * dl->weights->data[c * dl->weights->cols + k];
+                                }
+                                prev->delta->data[r * prev->delta->cols + c] = sum;
                             }
-                            prev->delta->data[r * prev->delta->cols + c] = sum;
+                        }
+                    }
+                } 
+                else if (curr->type == L_CONV2D) {
+                    compute_gradients_conv2d((Conv2DLayer*)curr->instance, input, (prev) ? prev->delta : NULL);
+                    update_weights_conv2d((Conv2DLayer*)curr->instance, lr);
+                } 
+                else if (curr->type == L_MAXPOOL) {
+                    backward_maxpool2d((MaxPool2DLayer*)curr->instance, (prev) ? prev->delta : NULL);
+                }
+
+                // B. Chain Rule: Apply Previous Layer's Activation Derivative (f'(z))
+                if (prev && (prev->type == L_DENSE || prev->type == L_CONV2D)) {
+                    int act_type = (prev->type == L_DENSE) ? ((DenseLayer*)prev->instance)->activation_type : ((Conv2DLayer*)prev->instance)->activation_type;
+                    Matrix *prev_z = (prev->type == L_DENSE) ? ((DenseLayer*)prev->instance)->z : ((Conv2DLayer*)prev->instance)->z;
+                    
+                    if (act_type != LINEAR && act_type != SOFTMAX) {
+                        #pragma omp parallel for
+                        for (int idx = 0; idx < prev->delta->rows * prev->delta->cols; idx++) {
+                            float z_val = prev_z->data[idx];
+                            float grad = 1.0f;
+                            if (act_type == RELU)            grad = ReLu_grad(z_val);
+                            else if (act_type == LEAKY_RELU) grad = LeakyReLu_grad(z_val);
+                            else if (act_type == TANH)       grad = Tanh_grad(z_val);
+                            else if (act_type == SIGMOID)    grad = sigmoid_grad(z_val);
+                            
+                            prev->delta->data[idx] *= grad; 
                         }
                     }
                 }
-            } 
-            else if (curr->type == L_CONV2D) {
-                compute_gradients_conv2d((Conv2DLayer*)curr->instance, input, (prev) ? prev->delta : NULL);
-                update_weights_conv2d((Conv2DLayer*)curr->instance, lr);
-            } 
-            else if (curr->type == L_MAXPOOL) {
-                backward_maxpool2d((MaxPool2DLayer*)curr->instance, (prev) ? prev->delta : NULL);
             }
+        } 
 
-            // B. Chain Rule: Apply Previous Layer's Activation Derivative (f'(z))
-            if (prev && (prev->type == L_DENSE || prev->type == L_CONV2D)) {
-                int act_type = (prev->type == L_DENSE) ? ((DenseLayer*)prev->instance)->activation_type : ((Conv2DLayer*)prev->instance)->activation_type;
-                Matrix *prev_z = (prev->type == L_DENSE) ? ((DenseLayer*)prev->instance)->z : ((Conv2DLayer*)prev->instance)->z;
-                
-                if (act_type != LINEAR && act_type != SOFTMAX) {
-                    #pragma omp parallel for
-                    for (int idx = 0; idx < prev->delta->rows * prev->delta->cols; idx++) {
-                        float z_val = prev_z->data[idx];
-                        float grad = 1.0f;
-                        if (act_type == RELU)            grad = ReLu_grad(z_val);
-                        else if (act_type == LEAKY_RELU) grad = LeakyReLu_grad(z_val);
-                        else if (act_type == TANH)       grad = Tanh_grad(z_val);
-                        else if (act_type == SIGMOID)    grad = sigmoid_grad(z_val);
-                        
-                        prev->delta->data[idx] *= grad; // Multiply by derivative to bound the error
-                    }
-                }
-            }
-        }
-
-        // Metrics Reporting (e.g., MSLE/MSE)
-        if (e % (epochs / 10) == 0) {
-            float loss = mse_loss(Y, last->a);
-            printf("Epoch: %6d | LR: %.5f | MSE Loss: %.6f\n", e, lr, loss);
-        }
+       
+        epoch_loss /= (float)num_batches;
+        printf("Epoch: %4d/%d | LR: %.5f | Cross-Entropy Loss: %.6f\n", e, epochs, lr, epoch_loss);
     }
 }
 
@@ -183,6 +199,7 @@ void ardl_model_summary(SequentialModel *model) {
             if(dl->activation_type == RELU) strcpy(act_name, "ReLU");
             else if(dl->activation_type == SIGMOID) strcpy(act_name, "Sigmoid");
             else if(dl->activation_type == TANH) strcpy(act_name, "Tanh");
+            else if(dl->activation_type == SOFTMAX) strcpy(act_name, "Softmax");
             else if(dl->activation_type == LINEAR) strcpy(act_name, "Linear");
             else strcpy(act_name, "Other");
 
@@ -195,7 +212,6 @@ void ardl_model_summary(SequentialModel *model) {
             else if(cl->activation_type == TANH) strcpy(act_name, "Tanh");
             else strcpy(act_name, "Linear");
 
-            // Output format: (Channels, Height, Width)
             char shape_str[30];
             sprintf(shape_str, "(%d, %d, %d)", cl->out_channels, cl->output_height, cl->output_width);
             printf(" %-15s %-15s %-15s\n", "Conv2D", shape_str, act_name);
@@ -210,7 +226,6 @@ void ardl_model_summary(SequentialModel *model) {
     
     printf("=================================================================\n");
     
-    // Memory Calculations (O(1) complexity thanks to Arena!)
     size_t used_bytes = model->arena->offset;
     float used_kb = (float)used_bytes / 1024.0f;
     float used_mb = used_kb / 1024.0f;
